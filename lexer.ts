@@ -1,65 +1,147 @@
 // block tokens
 type token =
   | { type: "header"; level: number; content: string }
-  | { type: "paragraph"; content: string };
+  | { type: "paragraph"; content: inline_token[] };
+
+// inline tokens
+type inline_token =
+  | { type: "bold"; content: string }
+  | { type: "highlight"; content: string }
+  | { type: "normal"; content: string };
+
+// modifier dict
+
+const modifiers: { [key: string]: string } = {
+  "*": "bold",
+  "=": "highlight",
+};
 
 // abstract syntax tree
 let ast: token[] = [];
 
-// read the file
-const content = await Deno.readTextFile("example2.md");
-let paragraph_content = "";
-for (let i = 0; i < content.length; i++) {
-  const char = content[i];
-  console.log("-------");
-  console.log("reading char: ", char, "at index ", i);
-  if (char == "#") {
-    // handle titles
-    console.log("header detected");
+// variables
+let inline_tokens: inline_token[] = [];
 
-    // if p content is not empty create and append its token
-    if (paragraph_content != "") {
-      let paragraph_token: token = {
-        type: "paragraph",
-        content: paragraph_content,
+// LEXER FUNCTION (file name input: string) -> Returns AST: Token[]
+export async function lexer(file_path: string): token[] {
+  // read the file
+  const content = await Deno.readTextFile("example3.md");
+  let paragraph_content = "";
+  for (let i = 0; i < content.length; i++) {
+    const char = content[i];
+    if (char == "#") {
+      // handle titles
+
+      // if p content is not empty create and append its token
+      if (paragraph_content != "") {
+        let inline_paragraph_token: inline_token = {
+          type: "normal",
+          content: paragraph_content,
+        };
+        inline_tokens.push(inline_paragraph_token);
+        paragraph_content = "";
+      }
+
+      // check if inline token tree exists
+      if (inline_tokens.length != 0) {
+        let paragraph_token: token = {
+          type: "paragraph",
+          content: inline_tokens,
+        };
+        ast.push(paragraph_token);
+        inline_tokens = [];
+      }
+
+      const header_level = get_header_level(i, content); // calculate header level eg. # ## ###
+      i += header_level; // jump so we dont check # again
+      const header_content_array = get_header_content(i + 1, content); // get the content of the header +1 to remove space after #
+      i += header_content_array[1] - 1; // eat contents
+
+      // create token
+      var header_token: token = {
+        type: "header",
+        level: header_level,
+        content: header_content_array[0],
       };
-      ast.push(paragraph_token);
-      paragraph_content = "";
+
+      ast.push(header_token); // append to the symbol table
+    } else {
+      // modifier detected
+      if (modifiers[char] != undefined) {
+        // check if normal content exisits
+        if (paragraph_content != "") {
+          let sub_inline_token: inline_token = {
+            type: "normal",
+            content: paragraph_content,
+          };
+          inline_tokens.push(sub_inline_token);
+          paragraph_content = "";
+        }
+        let sub_content_data = get_sub_content(i, content, char);
+        let sub_inline_token: inline_token = {
+          type: modifiers[char],
+          content: sub_content_data[0],
+        };
+        inline_tokens.push(sub_inline_token);
+        i += sub_content_data[1];
+
+        continue;
+      }
+
+      // normal text
+      paragraph_content += char;
     }
 
-    const header_level = get_header_level(i, content); // calculate header level eg. # ## ###
-    console.log("level of header is:", header_level);
-    i += header_level; // jump so we dont check # again
-    const header_content_array = get_header_content(i + 1, content); // get the content of the header +1 to remove space after #
-    console.log("content of header:", header_content_array[0]);
-    i += header_content_array[1] - 1; // eat contents
-
-    // create token
-    var header_token: token = {
-      type: "header",
-      level: header_level,
-      content: header_content_array[0],
-    };
-
-    ast.push(header_token); // append to the symbol table
-  } else {
-    paragraph_content += char;
+    // so if not title it means it is it paragraph
+    // paragraph must be until # or end of file
   }
 
-  // so if not title it means it is it paragraph
-  // paragpraph must be until # or end of file
-  console.log("----");
+  if (paragraph_content != "") {
+    inline_tokens.push({
+      type: "normal",
+      content: paragraph_content,
+    });
+    paragraph_content = "";
+  }
+
+  if (inline_tokens.length > 0) {
+    let paragraph_token: token = {
+      type: "paragraph",
+      content: inline_tokens,
+    };
+    ast.push(paragraph_token);
+    inline_tokens = [];
+  }
+
+  return ast;
 }
 
-if (paragraph_content != "") {
-  let paragraph_token: token = {
-    type: "paragraph",
-    content: paragraph_content,
-  };
-  ast.push(paragraph_token);
-}
+// handle sub content
+function get_sub_content(
+  index: number,
+  content: string,
+  modifier: string, // still "*"
+): [string, number] {
+  let sub_content = "";
+  let end_index = -1;
 
-console.log(ast);
+  // skip two opening asterisks (**)
+  let i = index + 2;
+
+  for (; i < content.length - 1; i++) {
+    if (content[i] == modifier && content[i + 1] == modifier) {
+      end_index = i;
+      break;
+    }
+    sub_content += content[i];
+  }
+
+  if (end_index === -1) {
+    return [sub_content, sub_content.length];
+  }
+
+  return [sub_content, end_index + 2 - index]; // +2 to eat the ending **
+}
 
 // get header level
 function get_header_level(index: number, content: string): number {

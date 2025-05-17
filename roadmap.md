@@ -8,12 +8,7 @@ Handle tokens -[-] Header -[-] Paragraph
 
 ### Inline Lexer
 
-Handle inline parameters
--[] Bold
--[] Italic
--[] Highlight
--[] Code
--[] Strikethrough
+Handle inline parameters -[-] Bold -[-] Highlight
 
 ### Parser.ts
 
